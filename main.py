@@ -1,33 +1,48 @@
+import sqlite3
+import os
 import telebot
 from telebot import types
 import threading
 
 bot = telebot.TeleBot('7209234950:AAGaPCk7wINlqRVo-yR43U9J-ZgrwbHpcLw')
 user_data = {}
-
-
+name = ''
+vidil = ''
+dirakcia = ''
+department = ''
+education = ''
+experience = ''
+downloaded_file = None
 # Це в нас функція для обробки команди "start", для того щоб бот запустився
 @bot.message_handler(commands=['start'])
 def main(message):
-    welcome_video = open('images/welcome_video.mp4', 'rb')
-    welcome_caption = (
-        f'Привіт, {message.from_user.first_name} {message.from_user.last_name}! Вітаємо в команді АГРОМАТ!\n\n'
-        'Я Качка - символ компанії. І я тут, щоб допомогти знайти відповіді на всі ті питання, які виникають у перші тижні та місяці роботи. \n\n'
-        'Моя мета: пришвидшити твою адаптацію та зробити її комфортною. Тож не соромся - запитуй')
-    bot.send_video(message.chat.id, welcome_video, caption=welcome_caption)
-    bot.send_message(message.chat.id,
-                     'Просимо тебе більш детально заповнити данні для того, щоб ми могли надати тобі повну інформацію:\n\n'
-                     'Введи своє повне ім\'я (ПІБ):')
-    bot.register_next_step_handler(message, get_full_name)
+    conn = sqlite3.connect('databaseTrainee.sql')
+    cur = conn.cursor()
 
+    cur.execute('CREATE TABLE IF NOT EXISTS trainee (id int auto_increment primary key, name varchar(50),'
+                'downloaded_file BLOB, vidil TEXT,dirakcia TEXT, department TEXT, education TEXT, experience TEXT)')
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    welcome_video = open('images/welcome_video.mp4', 'rb')
+    welcome_caption = (f'Привіт, {message.from_user.first_name} {message.from_user.last_name}! Вітаємо в команді АГРОМАТ!\n\n'
+                       'Я Качка - символ компанії. І я тут, щоб допомогти знайти відповіді на всі ті питання, які виникають у перші тижні та місяці роботи. \n\n'
+                       'Моя мета: пришвидшити твою адаптацію та зробити її комфортною. Тож не соромся - запитуй')
+    bot.send_video(message.chat.id, welcome_video, caption=welcome_caption)
+    bot.send_message(message.chat.id, 'Просимо тебе більш детально заповнити данні для того, щоб ми могли надати тобі повну інформацію:\n\n'
+                                      'Введи своє повне ім\'я (ПІБ):')
+    name = message.text.strip()
+    bot.register_next_step_handler(message, get_full_name)
 
 # Тут ми отримуємо повне ім'я стажера (ПІБ). За пробілом можна розбити на частини, для бази даних
 def get_full_name(message):
+    global name
+    name = message.text.strip()
     save_data(message.chat.id, 'full_name', message.text)
     bot.delete_message(message.chat.id, message.message_id)
     bot.delete_message(message.chat.id, message.message_id - 1)
     send_dep_top_keyboard(message)
-
 
 def send_dep_top_keyboard(message):
     keyboard = types.InlineKeyboardMarkup()
@@ -37,11 +52,12 @@ def send_dep_top_keyboard(message):
     keyboard.add(button1, button2, button3)
     bot.send_message(message.chat.id, 'Обери свій відділ:', reply_markup=keyboard)
 
-
 # В цій функції ми надсилаємо користувачу опції для вибору свого відділу
 @bot.callback_query_handler(func=lambda call: call.data.startswith('top'))
 def callback_dep_top(call):
+    global vidil
     dep_top = call.data
+    vidil = dep_top
     user_data[call.message.chat.id] = {'Відділ': dep_top}
 
     if dep_top == 'top1':
@@ -54,28 +70,26 @@ def callback_dep_top(call):
         for i, option in enumerate(options):
             button = types.InlineKeyboardButton(text=option, callback_data=f'mid_{i}')
             keyboard.add(button)
-        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,
-                              text="Обери свою дирекцію:", reply_markup=keyboard)
+        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="Обери свою дирекцію:", reply_markup=keyboard)
     else:
         confirm_selection(call)
-
 
 # Тут користувач обирає свою дирекцію, якщо така існує, інакше пропускається до наступного кроку
 @bot.callback_query_handler(func=lambda call: call.data.startswith('mid_'))
 def callback_dep_middle(call):
+    global dirakcia
     index = int(call.data.split('_')[1])
     options = ['Логістика', 'Маркетинг', 'Розвиток бізнеса', 'Закупівлі', 'Комерція', 'Фінанси', 'Юридичний']
     dep_middle = options[index]
+    dirakcia = dep_middle
     user_data[call.message.chat.id]['Дирекція'] = dep_middle
 
     if dep_middle == 'Логістика':
-        options = ['Експлуатація транспорту', 'ЗЕД', 'Складська логістика', 'Транспортна логістика',
-                   'Управління товарними запасами']
+        options = ['Експлуатація транспорту', 'ЗЕД', 'Складська логістика', 'Транспортна логістика', 'Управління товарними запасами']
     elif dep_middle == 'Закупівлі':
         options = ['Мерчандайзинг', 'Підлогові покриття', 'Плитка Економ', 'Плитка Середній та Еліт', 'Сантехніка']
     elif dep_middle == 'Комерція':
-        options = ['Власні торгові марки', 'Роздрібні продажі', 'Комплектація об\'єктів', 'Оптові продажі',
-                   'Сервіс (рекламації)', 'Супутні напрямки']
+        options = ['Власні торгові марки', 'Роздрібні продажі', 'Комплектація об\'єктів', 'Оптові продажі', 'Сервіс (рекламації)', 'Супутні напрямки']
     else:
         options = []
 
@@ -84,32 +98,28 @@ def callback_dep_middle(call):
         for i, option in enumerate(options):
             button = types.InlineKeyboardButton(text=option, callback_data=f'low_{i}')
             keyboard.add(button)
-        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,
-                              text="Обери свій департамент:", reply_markup=keyboard)
+        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="Обери свій департамент:", reply_markup=keyboard)
     else:
         confirm_selection(call)
-
 
 # Тут користувач обирає свій департамент, якщо такий існує, інакше пропускається до наступного кроку
 @bot.callback_query_handler(func=lambda call: call.data.startswith('low_'))
 def callback_dep_lower(call):
+    global department
     index = int(call.data.split('_')[1])
     dep_middle = user_data[call.message.chat.id]['Дирекція']
 
     if dep_middle == 'Логістика':
-        options = ['Експлуатація транспорту', 'ЗЕД', 'Складська логістика', 'Транспортна логістика',
-                   'Управління товарними запасами']
+        options = ['Експлуатація транспорту', 'ЗЕД', 'Складська логістика', 'Транспортна логістика', 'Управління товарними запасами']
     elif dep_middle == 'Закупівлі':
         options = ['Мерчандайзинг', 'Підлогові покриття', 'Плитка Економ', 'Плитка Середній та Еліт', 'Сантехніка']
     elif dep_middle == 'Комерція':
-        options = ['Власні торгові марки', 'Роздрібні продажі', 'Комплектація об\'єктів', 'Оптові продажі',
-                   'Сервіс (рекламації)', 'Супутні напрямки']
+        options = ['Власні торгові марки', 'Роздрібні продажі', 'Комплектація об\'єктів', 'Оптові продажі', 'Сервіс (рекламації)', 'Супутні напрямки']
 
     dep_lower = options[index]
     user_data[call.message.chat.id]['Департамент'] = dep_lower
     confirm_selection(call)
-
-
+    department = dep_lower
 # Тут ми просимо стажера перевірити чи правильно він обрав структуру і змінити в разі помилки
 def confirm_selection(call):
     user_id = call.message.chat.id
@@ -127,75 +137,70 @@ def confirm_selection(call):
     confirm_button = types.InlineKeyboardButton(text="Підтвердити", callback_data="confirm")
     change_button = types.InlineKeyboardButton(text="Змінити", callback_data="change")
     keyboard.add(confirm_button, change_button)
-    bot.edit_message_text(chat_id=user_id, message_id=call.message.message_id, text=confirmation_text,
-                          reply_markup=keyboard)
-
+    bot.edit_message_text(chat_id=user_id, message_id=call.message.message_id, text=confirmation_text, reply_markup=keyboard)
 
 # Ця функція описує дію кнопки Підтвердити
 @bot.callback_query_handler(func=lambda call: call.data == 'confirm')
 def callback_confirm(call):
     user_id = call.message.chat.id
-    confirmation_message = bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,
-                                                 text="Дякуємо! Ваш вибір підтверджено. Реєстрацію закінчено.")
+    confirmation_message = bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="Дякуємо! Ваш вибір підтверджено. Реєстрацію закінчено.")
     threading.Timer(5.0, delete_message, args=[call.message.chat.id, confirmation_message.message_id]).start()
-    confirmation_message = bot.send_message(user_id,
-                                            'У нас є маленька традиція: представляти нових співробітників у внутрішніх каналах комунікацій. '
-                                            'І для того щоб зробити твою візитівку нам потрібно познайомитися трохи ближче. '
-                                            'Тому давайте почнемо.')
+    confirmation_message = bot.send_message(user_id, 'У нас є маленька традиція: представляти нових співробітників у внутрішніх каналах комунікацій. '
+                                                     'І для того щоб зробити твою візитівку нам потрібно познайомитися трохи ближче. '
+                                                     'Тому давайте почнемо.')
     threading.Timer(30.0, delete_message, args=[call.message.chat.id, confirmation_message.message_id]).start()
 
     # Початок процесу заповнення візитівки
     get_hobby(call.message)
 
-
 # Ця функція описує дію кнопки змінити
 @bot.callback_query_handler(func=lambda call: call.data == 'change')
 def callback_change(call):
-    confirmation_message = bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,
-                                                 text="Давайте почнемо спочатку.")
+    confirmation_message = bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="Давайте почнемо спочатку.")
     threading.Timer(5.0, delete_message, args=[call.message.chat.id, confirmation_message.message_id]).start()
     send_dep_top_keyboard(call.message)
 
-
 # Тут ми просто відсилаємо повідомлення і реяструємо наступний крок
 def get_hobby(message):
+    global education
     bot.send_message(message.chat.id, 'Яка в тебе освіта?')
+    education = message.text.strip()
     bot.register_next_step_handler(message, get_degree)
-
-
 # Тут ми отримуємо інформацію про освіту стажера (треба подумати в якій формі він заповнюватиме)
 def get_degree(message):
+    global experience
     save_data(message.chat.id, 'degree', message.text)
     bot.delete_message(message.chat.id, message.message_id)
-    bot.edit_message_text('Розкажи декількома реченнями про свій попередній досвід роботи.', message.chat.id,
-                          message.message_id - 1)
+    bot.edit_message_text('Розкажи декількома реченнями про свій попередній досвід роботи.', message.chat.id, message.message_id-1)
+    experience = message.text.strip()
     bot.register_next_step_handler(message, get_experience)
-
 
 # Тут ми отримуємо інформацію проо його попереднє працевлаштування та досвід роботи (тут буде простий текст)
 def get_experience(message):
     save_data(message.chat.id, 'experience', message.text)
     bot.delete_message(message.chat.id, message.message_id)
-    confirmation_message = bot.edit_message_text('Додай своє фото.', message.chat.id, message.message_id - 2)
+    confirmation_message = bot.edit_message_text('Додай своє фото.', message.chat.id, message.message_id-2)
     threading.Timer(20.0, delete_message, args=[message.chat.id, confirmation_message.message_id]).start()
     bot.register_next_step_handler(message, get_photo)
 
-
 # Тут ми отримуємо фото працівника, яке буде на його візитівці
 def get_photo(message):
+    global downloaded_file
     if message.photo:
         # Отримуємо ID повідомлення, яке містить фото
         message_id_with_photo = message.message_id
         # Отримуємо ідентифікатор найбільшого фото (найкращої якості)
         photo_id = message.photo[-1].file_id
         # Отримуємо інформацію про фото за його ідентифікатором
-        # file_info = bot.get_file(photo_id)
+        file_info = bot.get_file(photo_id)
         # Завантажуємо фото
-        # downloaded_file = bot.download_file(file_info.file_path)
+        downloaded_file = bot.download_file(file_info.file_path)
         # Зберігаємо фото на сервері або обробляємо його
-        # with open(f'photos/{photo_id}.jpg', 'wb') as new_file:
-        #     new_file.write(downloaded_file)
-        confirmation_message = bot.send_message(message.chat.id, 'Фото збережено.')
+        #if not os.path.exists('photos'):
+        #    os.makedirs('photos')
+        #with open(f'photos/{photo_id}.jpg', 'wb') as new_file:
+        #    new_file.write(downloaded_file)
+        confirmation_message = bot.send_message(message.chat.id,'Фото збережено.')
         threading.Timer(5.0, delete_message, args=[message.chat.id, confirmation_message.message_id]).start()
 
         confirmation_message = bot.send_message(message.chat.id, 'Дякуємо! Форму заповнено.')
@@ -204,258 +209,13 @@ def get_photo(message):
         # Видаляємо повідомлення з фото після його обробки
         threading.Timer(5.0, delete_message, args=[message.chat.id, message_id_with_photo]).start()
 
-        spam_message = bot.send_message(message.chat.id, 'А зараз ми тобі розкажемо, хто ми є!')
-        threading.Timer(15.0, delete_message, args=[message.chat.id, spam_message.message_id]).start()
+        bot.send_message(message.chat.id, 'А зараз ми тобі розкажемо, хто ми є!')
         send_info_slides(message.chat.id)
     else:
-        bot.send_message(message.chat.id, 'Будь ласка, надішли фото.')
+        msg =bot.send_message(message.chat.id, 'Будь ласка, надішли фото.')
+        threading.Timer(5.0, delete_message, args=[message.chat.id, msg.message_id]).start()
+        bot.register_next_step_handler(message, get_photo)
 
-
-media = [
-    'images/welcome_slide_info.mp4', 'images/slide1_info.png', 'images/slide2_info.png',
-    'images/slide3_info.png', 'images/slide4_info.png', 'images/slide5_info.png',
-    'images/slide6_info.png', 'images/slide7_info.png', 'images/slide8_info.png',
-    'images/slide9_info.png', 'images/slide10_info.png', 'images/slide11_info.png',
-    'images/slide12_info.png', 'images/slide13_info.png', 'images/slide14_info.png',
-    'images/slide15_info.png', 'images/slide16_info.png',
-]
-
-# Індекси поточного медіа
-info_slides_index = 0
-structure_slides_index = 0
-rules_slides_index = 0
-
-# IDs останніх повідомлень
-last_message_ids = {
-    'info': None,
-    'structure': None,
-    'rules': None
-}
-
-
-# Функція для відправлення інформації про Агромат
-def send_info_slides(chat_id):
-    global info_slides_index
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    prev_button = types.InlineKeyboardButton(text='Попередній', callback_data='prev_info')
-    next_button = types.InlineKeyboardButton(text='Наступний', callback_data='next_info')
-    markup.add(prev_button, next_button)
-
-    try:
-        media_input = None
-        if media[info_slides_index].endswith('.mp4'):
-            with open(media[info_slides_index], 'rb') as video:
-                video_data = video.read()
-                media_input = types.InputMediaVideo(video_data)
-        else:
-            with open(media[info_slides_index], 'rb') as photo:
-                photo_data = photo.read()
-                media_input = types.InputMediaPhoto(photo_data)
-
-        if last_message_ids['info']:
-            try:
-                bot.edit_message_media(media=media_input, chat_id=chat_id, message_id=last_message_ids['info'],
-                                       reply_markup=markup)
-            except telebot.apihelper.ApiException:
-                if media[info_slides_index].endswith('.mp4'):
-                    msg = bot.send_video(chat_id, video_data, reply_markup=markup)
-                else:
-                    msg = bot.send_photo(chat_id, photo_data, reply_markup=markup)
-                last_message_ids['info'] = msg.message_id
-        else:
-            if media[info_slides_index].endswith('.mp4'):
-                msg = bot.send_video(chat_id, video_data, reply_markup=markup)
-            else:
-                msg = bot.send_photo(chat_id, photo_data, reply_markup=markup)
-            last_message_ids['info'] = msg.message_id
-
-    except FileNotFoundError:
-        bot.send_message(chat_id, "Помилка: файл не знайдено.")
-
-
-# Обробник натискання кнопок "Попередній" та "Наступний"
-@bot.callback_query_handler(func=lambda call: call.data in ['prev_info', 'next_info'])
-def callback_inline(call):
-    global info_slides_index
-    if call.message:
-        chat_id = call.message.chat.id
-        if call.data == 'prev_info':
-            info_slides_index = max(0, info_slides_index - 1)
-        elif call.data == 'next_info':
-            if info_slides_index < len(media) - 1:
-                info_slides_index += 1
-            else:
-                bot.delete_message(call.message.chat.id, call.message.message_id)
-                confirmation_message = bot.send_message(chat_id, "Це був останній слайд. Дякуємо за перегляд!")
-                threading.Timer(5.0, delete_message, args=[call.message.chat.id, confirmation_message.message_id]).start()
-                bot.send_message(chat_id, "Поринь у світ нашої компанії через це захоплююче відео.")
-                tour(chat_id)
-                return
-        send_info_slides(chat_id)
-
-
-# Функція для відправлення вітального відео з Аліною
-def tour(chat_id):
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    next_button = types.InlineKeyboardButton(text='Далі', callback_data='next_stage')
-    markup.add(next_button)
-    bot.send_video(chat_id, open('images/tour.mp4', 'rb'), reply_markup=markup, timeout=60)
-
-
-image = [
-    'images/slide1_structure.png', 'images/slide2_structure.png',
-    'images/slide3_structure.png', 'images/slide4_structure.png',
-    'images/slide5_structure.png'
-]
-
-
-# Функція для відправлення структури компанії
-def send_structure_slides(chat_id):
-    global structure_slides_index
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    prev_button = types.InlineKeyboardButton(text='Попередній', callback_data='prev_structure')
-    next_button = types.InlineKeyboardButton(text='Наступний', callback_data='next_structure')
-    markup.add(prev_button, next_button)
-
-    try:
-        with open(image[structure_slides_index], 'rb') as photo:
-            photo_data = photo.read()
-            media_input = types.InputMediaPhoto(photo_data)
-            if last_message_ids['structure']:
-                try:
-                    bot.edit_message_media(media=media_input, chat_id=chat_id, message_id=last_message_ids['structure'],
-                                           reply_markup=markup)
-                except telebot.apihelper.ApiException:
-                    msg = bot.send_photo(chat_id, photo_data, reply_markup=markup)
-                    last_message_ids['structure'] = msg.message_id
-            else:
-                msg = bot.send_photo(chat_id, photo_data, reply_markup=markup)
-                last_message_ids['structure'] = msg.message_id
-    except FileNotFoundError:
-        bot.send_message(chat_id, "Помилка: файл не знайдено.")
-
-
-# Обробник натискання кнопки "Далі" під відео
-@bot.callback_query_handler(func=lambda call: call.data == 'next_stage')
-def next_stage(call):
-    global structure_slides_index
-    structure_slides_index = 0  # Скидання індексу для слайдів
-    bot.delete_message(call.message.chat.id, call.message.message_id-1)
-    bot.delete_message(call.message.chat.id, call.message.message_id)
-    confirmation_message = bot.send_message(call.message.chat.id, 'А тепер познайомимо тебе з керівниками Компанії')
-    threading.Timer(5.0, delete_message, args=[call.message.chat.id, confirmation_message.message_id]).start()
-    send_structure_slides(call.message.chat.id)
-
-
-# Обробник натискання кнопок "Попередній" та "Наступний" для слайдів структури компанії
-@bot.callback_query_handler(func=lambda call: call.data in ['prev_structure', 'next_structure'])
-def callback_inline_structure(call):
-    global structure_slides_index
-    if call.message:
-        chat_id = call.message.chat.id
-        if call.data == 'prev_structure':
-            structure_slides_index = max(0, structure_slides_index - 1)
-        elif call.data == 'next_structure':
-            if structure_slides_index < len(image) - 1:
-                structure_slides_index += 1
-            else:
-                bot.delete_message(call.message.chat.id, call.message.message_id)
-                confirmation_message = bot.send_message(chat_id, "Це був останній слайд. Дякуємо за перегляд!")
-                threading.Timer(5.0, delete_message, args=[call.message.chat.id, confirmation_message.message_id]).start()
-                spam_message = bot.send_message(chat_id, "Познайомся з нашими правилами.")
-                threading.Timer(10.0, delete_message, args=[call.message.chat.id, spam_message.message_id]).start()
-                send_rules_slides(chat_id)
-                return
-        send_structure_slides(chat_id)
-
-
-rules_slides_index = 0
-# Медиафайлы для слайдов правил
-rules = [
-    'images/slide1_rules.png', 'images/slide2_rules.png',
-    'images/slide3_rules.png', 'images/slide4_rules.png', 'images/slide5_rules.png'
-]
-
-# Функція для надсилання слайдів правил
-def send_rules_slides(chat_id):
-    global rules_slides_index
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    prev_button = types.InlineKeyboardButton(text='Попередній', callback_data='prev_rules')
-    next_button = types.InlineKeyboardButton(text='Наступний', callback_data='next_rules')
-    markup.add(prev_button, next_button)
-
-    try:
-        with open(rules[rules_slides_index], 'rb') as photo:
-            photo_data = photo.read()
-            media_input = types.InputMediaPhoto(photo_data)
-            if last_message_ids['rules']:
-                try:
-                    bot.edit_message_media(media=media_input, chat_id=chat_id, message_id=last_message_ids['rules'], reply_markup=markup)
-                except telebot.apihelper.ApiException:
-                    msg = bot.send_photo(chat_id, photo_data, reply_markup=markup)
-                    last_message_ids['rules'] = msg.message_id
-            else:
-                msg = bot.send_photo(chat_id, photo_data, reply_markup=markup)
-                last_message_ids['rules'] = msg.message_id
-    except FileNotFoundError:
-        bot.send_message(chat_id, "Помилка: файл не знайдено.")
-
-# Обробник натискання кнопок "Попередній" і "Наступний" для слайдів правил
-@bot.callback_query_handler(func=lambda call: call.data in ['prev_rules', 'next_rules'])
-def callback_inline_rules(call):
-    global rules_slides_index
-    if call.message:
-        chat_id = call.message.chat.id
-        if call.data == 'prev_rules':
-            rules_slides_index = max(0, rules_slides_index - 1)
-        elif call.data == 'next_rules':
-            if rules_slides_index < len(rules) - 1:
-                rules_slides_index += 1
-            else:
-                bot.delete_message(call.message.chat.id, call.message.message_id)
-                send_avatar_message(chat_id)
-                return
-        send_rules_slides(chat_id)
-
-# Зміна для збереження ID останнього повідомлення для кожного типу медіа
-last_message_ids = {
-    'info': None,
-    'structure': None,
-    'rules': None,
-    'avatar': None,
-}
-
-def send_avatar_message(chat_id):
-    msg = bot.send_message(chat_id, "Аватар")
-    last_message_ids['avatar_text'] = msg.message_id
-
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    next_button = types.InlineKeyboardButton(text='Далі', callback_data='next_avatar')
-    markup.add(next_button)
-
-    video_msg = bot.send_video(chat_id, open('images/welcome_video.mp4', 'rb'), reply_markup=markup)
-    last_message_ids['avatar'] = video_msg.message_id
-
-@bot.callback_query_handler(func=lambda call: call.data == 'next_avatar')
-def next_avatar(call):
-    chat_id = call.message.chat.id
-
-    bot.delete_message(chat_id, last_message_ids['avatar_text'])
-    bot.delete_message(chat_id, last_message_ids['avatar'])
-
-    bot.send_message(chat_id, "Дякую, ви пройшли інструктаж")
-
-def save_data(user_id, key, value):
-    if user_id not in user_data:
-        user_data[user_id] = {}
-    user_data[user_id][key] = value
-
-
-def delete_message(chat_id, message_id):
-    bot.delete_message(chat_id, message_id)
-
-
-bot.polling(none_stop=True)
 # media = [
 #     'images/welcome_slide_info.mp4', 'images/slide1_info.png', 'images/slide2_info.png',
 #     'images/slide3_info.png', 'images/slide4_info.png', 'images/slide5_info.png',
@@ -588,6 +348,207 @@ bot.polling(none_stop=True)
 #
 # bot.polling(none_stop=True)
 
+media = [
+    'images/welcome_slide_info.mp4', 'images/slide1_info.png', 'images/slide2_info.png',
+    'images/slide3_info.png', 'images/slide4_info.png', 'images/slide5_info.png',
+    'images/slide6_info.png', 'images/slide7_info.png', 'images/slide8_info.png',
+    'images/slide9_info.png', 'images/slide10_info.png', 'images/slide11_info.png',
+    'images/slide12_info.png', 'images/slide13_info.png', 'images/slide14_info.png',
+    'images/slide15_info.png', 'images/slide16_info.png',
+]
+
+# Індекс поточного медіа
+info_slides_index = 0
+last_message_id = None
+
+# Функція для відправлення інформації про Агромат
+def send_info_slides(chat_id):
+    global info_slides_index, last_message_id
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    prev_button = types.InlineKeyboardButton(text='Попередній', callback_data='prev')
+    next_button = types.InlineKeyboardButton(text='Наступний', callback_data='next')
+    markup.add(prev_button, next_button)
+
+    try:
+        if media[info_slides_index].endswith('.mp4'):
+            with open(media[info_slides_index], 'rb') as video:
+                video_data = video.read()
+                media_input = types.InputMediaVideo(video_data)
+                if last_message_id:
+                    try:
+                        bot.edit_message_media(media=media_input, chat_id=chat_id, message_id=last_message_id, reply_markup=markup)
+                    except telebot.apihelper.ApiException:
+                        msg = bot.send_video(chat_id, video_data, reply_markup=markup)
+                        last_message_id = msg.message_id
+                else:
+                    msg = bot.send_video(chat_id, video_data, reply_markup=markup)
+                    last_message_id = msg.message_id
+        else:
+            with open(media[info_slides_index], 'rb') as photo:
+                photo_data = photo.read()
+                media_input = types.InputMediaPhoto(photo_data)
+                if last_message_id:
+                    try:
+                        bot.edit_message_media(media=media_input, chat_id=chat_id, message_id=last_message_id, reply_markup=markup)
+                    except telebot.apihelper.ApiException:
+                        msg = bot.send_photo(chat_id, photo_data, reply_markup=markup)
+                        last_message_id = msg.message_id
+                else:
+                    msg = bot.send_photo(chat_id, photo_data, reply_markup=markup)
+                    last_message_id = msg.message_id
+    except FileNotFoundError:
+        bot.send_message(chat_id, "Помилка: файл не знайдено.")
+
+# Обробник натискання кнопок "Попередній" та "Наступний"
+@bot.callback_query_handler(func=lambda call: call.data in ['prev', 'next'])
+def callback_inline(call):
+    global info_slides_index
+    if call.message:
+        chat_id = call.message.chat.id
+        bot.delete_message(chat_id, call.message.message_id)
+        if call.data == 'prev':
+            info_slides_index = max(0, info_slides_index - 1)
+        elif call.data == 'next':
+            if info_slides_index < len(media) - 1:
+                info_slides_index += 1
+            else:
+                bot.send_message(chat_id, "Це був останній слайд. Дякуємо за перегляд!")
+                bot.send_message(chat_id, "Поринь у світ нашої компанії через це захоплююче відео.")
+                tour(chat_id)
+                return
+        send_info_slides(chat_id)
+
+# Функція для відправлення вітального відео з Аліною
+def tour(chat_id):
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    next_button = types.InlineKeyboardButton(text='Далі', callback_data='next_stage')
+    markup.add(next_button)
+    bot.send_video(chat_id, open('images/tour.mp4', 'rb'), reply_markup=markup, timeout=60)
+
+image = [
+    'images/slide1_structure.png', 'images/slide2_structure.png',
+    'images/slide3_structure.png', 'images/slide4_structure.png',
+    'images/slide5_structure.png'
+]
+
+structure_slides_index = 0
+
+# Функція для відправлення структури компанії
+def send_structure_slides(chat_id):
+    global structure_slides_index, last_message_id
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    prev_button = types.InlineKeyboardButton(text='Попередній', callback_data='prev_structure')
+    next_button = types.InlineKeyboardButton(text='Наступний', callback_data='next_structure')
+    markup.add(prev_button, next_button)
+
+    try:
+        with open(image[structure_slides_index], 'rb') as photo:
+            photo_data = photo.read()
+            media_input = types.InputMediaPhoto(photo_data)
+            if last_message_id:
+                try:
+                    bot.edit_message_media(media=media_input, chat_id=chat_id, message_id=last_message_id, reply_markup=markup)
+                except telebot.apihelper.ApiException:
+                    msg = bot.send_photo(chat_id, photo_data, reply_markup=markup)
+                    last_message_id = msg.message_id
+            else:
+                msg = bot.send_photo(chat_id, photo_data, reply_markup=markup)
+                last_message_id = msg.message_id
+    except FileNotFoundError:
+        bot.send_message(chat_id, "Помилка: файл не знайдено.")
+
+# Обробник натискання кнопки "Далі" під відео
+@bot.callback_query_handler(func=lambda call: call.data == 'next_stage')
+def next_stage(call):
+    global structure_slides_index
+    structure_slides_index = 0  # Скидання індексу для слайдів
+    bot.delete_message(call.message.chat.id, call.message.message_id)
+    bot.send_message(call.message.chat.id, 'А тепер познайомимо тебе з керівниками Компанії')
+    send_structure_slides(call.message.chat.id)
+
+# Обробник натискання кнопок "Попередній" та "Наступний" для слайдів структури компанії
+@bot.callback_query_handler(func=lambda call: call.data in ['prev_structure', 'next_structure'])
+def callback_inline_structure(call):
+    global structure_slides_index
+    if call.message:
+        chat_id = call.message.chat.id
+        bot.delete_message(chat_id, call.message.message_id)
+        if call.data == 'prev_structure':
+            structure_slides_index = max(0, structure_slides_index - 1)
+        elif call.data == 'next_structure':
+            if structure_slides_index < len(image) - 1:
+                structure_slides_index += 1
+            else:
+                bot.send_message(chat_id, "Це був останній слайд. Дякуємо за перегляд!")
+                bot.send_message(chat_id, "Познайомся з нашими правилами.")
+                send_rules_slides(chat_id)
+                return
+        send_structure_slides(chat_id)
+
+rules_slides_index = 0
+# Медиафайлы для слайдов правил
+rules = [
+    'images/slide1_rules.png', 'images/slide2_rules.png',
+    'images/slide3_rules.png', 'images/slide4_rules.png', 'images/slide5_rules.png'
+]
+
+# Функция для отправки текущего изображений с правилами компании
+def send_rules_slides(chat_id):
+    global rules_slides_index, last_message_id
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    prev_button = types.InlineKeyboardButton(text='Попередній', callback_data='prev_rules')
+    next_button = types.InlineKeyboardButton(text='Наступний', callback_data='next_rules')
+    markup.add(prev_button, next_button)
+
+    try:
+        with open(rules[rules_slides_index], 'rb') as photo:
+            photo_data = photo.read()
+            media_input = types.InputMediaPhoto(photo_data)
+            if last_message_id:
+                try:
+                    bot.edit_message_media(media=media_input, chat_id=chat_id, message_id=last_message_id, reply_markup=markup)
+                except telebot.apihelper.ApiException:
+                    msg = bot.send_photo(chat_id, photo_data, reply_markup=markup)
+                    last_message_id = msg.message_id
+            else:
+                msg = bot.send_photo(chat_id, photo_data, reply_markup=markup)
+                last_message_id = msg.message_id
+    except FileNotFoundError:
+        bot.send_message(chat_id, "Помилка: файл не знайдено.")
+
+# Обработчик нажатия кнопок "Попередній" и "Наступний" для слайдов правил
+@bot.callback_query_handler(func=lambda call: call.data in ['prev_rules', 'next_rules'])
+def callback_inline_rules(call):
+    global rules_slides_index
+    if call.message:
+        chat_id = call.message.chat.id
+        bot.delete_message(chat_id, call.message.message_id)
+        if call.data == 'prev_rules':
+            rules_slides_index = max(0, rules_slides_index - 1)
+        elif call.data == 'next_rules':
+            if rules_slides_index < len(rules) - 1:
+                rules_slides_index += 1
+            else:
+                bot.send_message(chat_id, "Це був останній слайд. Дякуємо за перегляд!")
+                return
+        send_rules_slides(chat_id)
+def save_data(user_id, key, value):
+    if user_id not in user_data:
+        user_data[user_id] = {}
+    user_data[user_id][key] = value
+# Функція для видалення повідомлення
+def delete_message(chat_id, message_id):
+    bot.delete_message(chat_id, message_id)
+
+    conn = sqlite3.connect('databaseTrainee.sql')
+    cur = conn.cursor()
+
+    cur.execute('INSERT INTO trainee (name,downloaded_file, vidil,dirakcia , department,'
+                ' education , experience)VALUES ({%name},{%downloaded_file},{%vidil},{%dirakcia},{%department},{%education},{%experience})')
+    conn.commit()
+    cur.close()
+
+bot.polling(none_stop=True)
 
 # def save_data(user_id, key, value):
 #     if user_id not in user_data:
